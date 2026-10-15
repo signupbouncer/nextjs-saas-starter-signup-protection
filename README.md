@@ -1,119 +1,83 @@
-# Next.js SaaS Starter
+# Next.js SaaS starter with signup protection
 
-This is a starter template for building a SaaS application using **Next.js** with support for authentication, Stripe integration for payments, and a dashboard for logged-in users.
+The Next.js SaaS starter (nextjs/saas-starter) with one signupbouncer check in its sign-up server action. Burner
+addresses and domains that cannot receive mail are refused with a message in the existing form. One Gmail inbox
+signing up again under dot and `+tag` spellings is refused after a few tries. If signupbouncer is slow or down, the
+sign-up goes through after at most 1.5 seconds.
 
-**Demo: [https://next-saas-start.vercel.app/](https://next-saas-start.vercel.app/)**
+Draft README. The article that walks through it will be at https://signupbouncer.com/guides/nextjs-saas-starter.
 
-## Features
+## Built from nextjs/saas-starter
 
-- Marketing landing page (`/`) with animated Terminal element
-- Pricing page (`/pricing`) which connects to Stripe Checkout
-- Dashboard pages with CRUD operations on users/teams
-- Basic RBAC with Owner and Member roles
-- Subscription management with Stripe Customer Portal
-- Email/password authentication with JWTs stored to cookies
-- Global middleware to protect logged-in routes
-- Local middleware to protect Server Actions or validate Zod schemas
-- Activity logging system for any user events
+This is a copy of https://github.com/nextjs/saas-starter at commit `6e33e58b1e553a41fe22e6b941a7229a002de361`
+(2025-12-11), by Vercel, under the MIT license (`LICENSE`). Its own README is kept as `README.upstream.md`, with the
+Stripe setup and everything else the starter does. Versions are upstream's: `next` 15.6.0-canary.59, `react` 19.1.0,
+`drizzle-orm` 0.43, `stripe` 18.1, and upstream's `pnpm-lock.yaml`.
 
-## Tech Stack
+What this copy adds:
 
-- **Framework**: [Next.js](https://nextjs.org/)
-- **Database**: [Postgres](https://www.postgresql.org/)
-- **ORM**: [Drizzle](https://orm.drizzle.team/)
-- **Payments**: [Stripe](https://stripe.com/)
-- **UI Library**: [shadcn/ui](https://ui.shadcn.com/)
+| File | Change |
+| --- | --- |
+| `lib/signupbouncer.ts` | The signupbouncer helper (`checkSignup`, `shouldBlock`, `clientIp`), copied as is. No dependencies. |
+| `app/(login)/actions.ts` | In `signUp`, the check runs after the existing-user check and before the user is created. A refusal goes back through the form's own `{ error }` state. |
+| `app/(login)/actions.ts` | Email addresses are trimmed and lowercased in sign-up, sign-in, account and invite forms, so `Test@test.com` and `test@test.com` are one account (nextjs/saas-starter#184). |
+| `.env.example` | `SIGNUPBOUNCER_API_KEY`, and the optional `SIGNUPBOUNCER_IP_HEADER` and `SIGNUPBOUNCER_BASE_URL`. |
+| `tsconfig.json` | `test` is excluded, so `next build` skips the Deno tests. |
+| `test/` | Offline tests of the sign-up action, and a live run against a running app. |
 
-## Getting Started
+## Run it
 
-```bash
-git clone https://github.com/nextjs/saas-starter
-cd saas-starter
-pnpm install
+You need Node 18.18 or later, Postgres, and a signupbouncer API key (`sb_live_...`) from https://signupbouncer.com.
+
+```sh
+npm install
+cp .env.example .env
 ```
 
-## Running Locally
+Fill in `.env`:
 
-[Install](https://docs.stripe.com/stripe-cli) and log in to your Stripe account:
+- `POSTGRES_URL`: your database, for example `postgres://postgres:postgres@127.0.0.1:54322/saas` with
+  `docker run -d -p 127.0.0.1:54322:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=saas postgres:17-alpine`.
+- `AUTH_SECRET`: any long random string (`openssl rand -hex 32`).
+- `BASE_URL`: `http://localhost:3000`.
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: sign-up works with placeholder values. Checkout, the pricing page
+  and `npm run build` need real test keys (see `README.upstream.md`).
+- `SIGNUPBOUNCER_API_KEY`: your key. It stays on the server, so it has no `NEXT_PUBLIC_` prefix.
+- `SIGNUPBOUNCER_IP_HEADER`: the header your host overwrites with the client IP (`x-real-ip` on Vercel). Leave it
+  unset locally. Without it the email is checked alone.
 
-```bash
-stripe login
+```sh
+npm run db:migrate
+npm run dev
 ```
 
-Use the included setup script to create your `.env` file:
+Open http://localhost:3000/sign-up. New signupbouncer apps start in shadow mode, which logs every check and refuses
+nothing. Switch the app to Enforce on its Rules tab when the dashboard looks right.
 
-```bash
-pnpm db:setup
+## Tests
+
+Our tests run with Deno.
+
+```sh
+deno install
+deno test --no-check --import-map=test/import_map.json --allow-read=. \
+  --allow-env=SIGNUPBOUNCER_API_KEY,SIGNUPBOUNCER_BASE_URL,SIGNUPBOUNCER_IP_HEADER test/
 ```
 
-Run the database migrations and seed the database with a default user and team:
+`test/signup_test.ts` runs the real `signUp` action and the real helper with `fetch` replaced and the database stubbed:
+allow, block, challenge (allowed by default), shadow mode, the API down or hanging (the sign-up goes through), a half
+answer, no key, and the lowercase fix. No network.
 
-```bash
-pnpm db:migrate
-pnpm db:seed
+`test/live.ts` posts the real sign-up form of a running app (`npm run dev`, with `SIGNUPBOUNCER_BASE_URL` pointing at
+a signupbouncer API whose app is in Enforce mode) and counts rows in `users` and `teams`:
+
+```sh
+POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:54322/saas deno run \
+  --allow-net=localhost:3000,127.0.0.1:54322 '--allow-env=APP_URL,POSTGRES_URL,PG*' --allow-read=. test/live.ts
 ```
 
-This will create the following user and team:
+Add `--api-down` with the signupbouncer API stopped to check that a sign-up still goes through.
 
-- User: `test@test.com`
-- Password: `admin123`
+## License
 
-You can also create new users through the `/sign-up` route.
-
-Finally, run the Next.js development server:
-
-```bash
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the app in action.
-
-You can listen for Stripe webhooks locally through their CLI to handle subscription change events:
-
-```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-```
-
-## Testing Payments
-
-To test Stripe payments, use the following test card details:
-
-- Card Number: `4242 4242 4242 4242`
-- Expiration: Any future date
-- CVC: Any 3-digit number
-
-## Going to Production
-
-When you're ready to deploy your SaaS application to production, follow these steps:
-
-### Set up a production Stripe webhook
-
-1. Go to the Stripe Dashboard and create a new webhook for your production environment.
-2. Set the endpoint URL to your production API route (e.g., `https://yourdomain.com/api/stripe/webhook`).
-3. Select the events you want to listen for (e.g., `checkout.session.completed`, `customer.subscription.updated`).
-
-### Deploy to Vercel
-
-1. Push your code to a GitHub repository.
-2. Connect your repository to [Vercel](https://vercel.com/) and deploy it.
-3. Follow the Vercel deployment process, which will guide you through setting up your project.
-
-### Add environment variables
-
-In your Vercel project settings (or during deployment), add all the necessary environment variables. Make sure to update the values for the production environment, including:
-
-1. `BASE_URL`: Set this to your production domain.
-2. `STRIPE_SECRET_KEY`: Use your Stripe secret key for the production environment.
-3. `STRIPE_WEBHOOK_SECRET`: Use the webhook secret from the production webhook you created in step 1.
-4. `POSTGRES_URL`: Set this to your production database URL.
-5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
-
-## Other Templates
-
-While this template is intentionally minimal and to be used as a learning resource, there are other paid versions in the community which are more full-featured:
-
-- https://achromatic.dev
-- https://shipfa.st
-- https://makerkit.dev
-- https://zerotoshipped.com
-- https://turbostarter.dev
+MIT, as upstream. See `LICENSE`.

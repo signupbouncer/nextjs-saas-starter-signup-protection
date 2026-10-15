@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "@/lib/db/drizzle": "./stubs/drizzle.ts",
+    "@/lib/db/queries": "./stubs/queries.ts",
+    "@/lib/auth/session": "./stubs/session.ts",
+    "@/lib/payments/stripe": "./stubs/stripe.ts",
+    "next/headers": "./stubs/next-headers.ts",
+    "next/navigation": "./stubs/next-navigation.ts",
+    "@/": "../"
+  }
+}

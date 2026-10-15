@@ -18,7 +18,15 @@ import {
 } from '@/lib/db/schema';
 import { comparePasswords, hashPassword, setSession } from '@/lib/auth/session';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+// #region sb-import
+import { cookies, headers } from 'next/headers';
+import {
+  checkSignup,
+  clientIp,
+  DEFAULT_BLOCK_MESSAGE,
+  shouldBlock
+} from '@/lib/signupbouncer';
+// #endregion
 import { createCheckoutSession } from '@/lib/payments/stripe';
 import { getUser, getUserWithTeam } from '@/lib/db/queries';
 import {
@@ -45,7 +53,9 @@ async function logActivity(
 }
 
 const signInSchema = z.object({
-  email: z.string().email().min(3).max(255),
+  // #region lowercase-signin
+  email: z.string().trim().toLowerCase().email().min(3).max(255),
+  // #endregion
   password: z.string().min(8).max(100)
 });
 
@@ -101,7 +111,10 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 });
 
 const signUpSchema = z.object({
-  email: z.string().email(),
+  // #region lowercase-signup
+  // One account per address, whatever its case (nextjs/saas-starter#184).
+  email: z.string().trim().toLowerCase().email(),
+  // #endregion
   password: z.string().min(8),
   inviteId: z.string().optional()
 });
@@ -122,6 +135,27 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
       password
     };
   }
+
+  // #region sb-check
+  // Refuse burner, unreachable and repeat sign-ups before the user exists.
+  // If signupbouncer is slow or down, the sign-up goes through.
+  const h = await headers();
+  const check = await checkSignup(
+    {
+      apiKey: process.env.SIGNUPBOUNCER_API_KEY ?? '',
+      baseUrl: process.env.SIGNUPBOUNCER_BASE_URL || undefined,
+      onError: (e) => console.warn('signupbouncer:', e.reason, e.status ?? '')
+    },
+    {
+      email,
+      ip: clientIp(h, process.env.SIGNUPBOUNCER_IP_HEADER),
+      userAgent: h.get('user-agent') ?? undefined
+    }
+  );
+  if (shouldBlock(check)) {
+    return { error: DEFAULT_BLOCK_MESSAGE, email, password };
+  }
+  // #endregion
 
   const passwordHash = await hashPassword(password);
 
@@ -340,7 +374,7 @@ export const deleteAccount = validatedActionWithUser(
 
 const updateAccountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
-  email: z.string().email('Invalid email address')
+  email: z.string().trim().toLowerCase().email('Invalid email address')
 });
 
 export const updateAccount = validatedActionWithUser(
@@ -392,7 +426,7 @@ export const removeTeamMember = validatedActionWithUser(
 );
 
 const inviteTeamMemberSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
   role: z.enum(['member', 'owner'])
 });
 
