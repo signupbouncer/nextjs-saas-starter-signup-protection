@@ -1,10 +1,11 @@
 // Test stand-in for lib/db/drizzle.ts: records every query instead of talking to Postgres.
-import { getTableName, type Table } from 'drizzle-orm';
+import { getTableName, type SQL, type Table } from 'drizzle-orm';
 
 export type Op = {
   op: 'select' | 'insert' | 'update';
   table?: string;
   values?: Record<string, unknown>;
+  where?: SQL;
 };
 
 export const ops: Op[] = [];
@@ -40,7 +41,11 @@ function builder(op: Op, result: () => unknown[]): any {
       return Promise.resolve(result()).then(res, rej);
     }
   };
-  for (const m of ['where', 'limit', 'leftJoin', 'innerJoin', 'orderBy', 'returning']) {
+  b.where = (cond: SQL) => {
+    op.where = cond;
+    return b;
+  };
+  for (const m of ['limit', 'leftJoin', 'innerJoin', 'orderBy', 'returning']) {
     b[m] = () => b;
   }
   return b;

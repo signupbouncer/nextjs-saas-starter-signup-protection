@@ -52,12 +52,12 @@ async function logActivity(
   await db.insert(activityLogs).values(newActivity);
 }
 
+// #region lowercase-signin
 const signInSchema = z.object({
-  // #region lowercase-signin
   email: z.string().trim().toLowerCase().email().min(3).max(255),
-  // #endregion
   password: z.string().min(8).max(100)
 });
+// #endregion
 
 export const signIn = validatedAction(signInSchema, async (data, formData) => {
   const { email, password } = data;
@@ -110,14 +110,14 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
   redirect('/dashboard');
 });
 
+// #region lowercase-signup
 const signUpSchema = z.object({
-  // #region lowercase-signup
   // One account per address, whatever its case (nextjs/saas-starter#184).
   email: z.string().trim().toLowerCase().email(),
-  // #endregion
   password: z.string().min(8),
   inviteId: z.string().optional()
 });
+// #endregion
 
 export const signUp = validatedAction(signUpSchema, async (data, formData) => {
   const { email, password, inviteId } = data;
@@ -128,6 +128,7 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
     .where(eq(users.email, email))
     .limit(1);
 
+  // #region sb-check
   if (existingUser.length > 0) {
     return {
       error: 'Failed to create user. Please try again.',
@@ -136,7 +137,6 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
     };
   }
 
-  // #region sb-check
   // Refuse burner, unreachable and repeat sign-ups before the user exists.
   // If signupbouncer is slow or down, the sign-up goes through.
   const h = await headers();
@@ -155,9 +155,9 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
   if (shouldBlock(check)) {
     return { error: DEFAULT_BLOCK_MESSAGE, email, password };
   }
-  // #endregion
 
   const passwordHash = await hashPassword(password);
+  // #endregion
 
   const newUser: NewUser = {
     email,
@@ -181,17 +181,20 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
 
   if (inviteId) {
     // Check if there's a valid invitation
+    // #region invite-lookup
     const [invitation] = await db
       .select()
       .from(invitations)
       .where(
         and(
           eq(invitations.id, parseInt(inviteId)),
-          eq(invitations.email, email),
+          // Invitations sent before the lowercase change can hold capitals.
+          eq(sql`lower(${invitations.email})`, email),
           eq(invitations.status, 'pending')
         )
       )
       .limit(1);
+    // #endregion
 
     if (invitation) {
       teamId = invitation.teamId;
@@ -372,10 +375,12 @@ export const deleteAccount = validatedActionWithUser(
   }
 );
 
+// #region lowercase-account
 const updateAccountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   email: z.string().trim().toLowerCase().email('Invalid email address')
 });
+// #endregion
 
 export const updateAccount = validatedActionWithUser(
   updateAccountSchema,
@@ -425,10 +430,12 @@ export const removeTeamMember = validatedActionWithUser(
   }
 );
 
+// #region lowercase-invite
 const inviteTeamMemberSchema = z.object({
   email: z.string().trim().toLowerCase().email('Invalid email address'),
   role: z.enum(['member', 'owner'])
 });
+// #endregion
 
 export const inviteTeamMember = validatedActionWithUser(
   inviteTeamMemberSchema,

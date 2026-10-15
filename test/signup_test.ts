@@ -5,10 +5,11 @@
 //   deno test --no-check --import-map=test/import_map.json --allow-read=. \
 //     --allow-env=SIGNUPBOUNCER_API_KEY,SIGNUPBOUNCER_BASE_URL,SIGNUPBOUNCER_IP_HEADER test/
 
-import { assert, assertEquals } from 'jsr:@std/assert@1.0.13';
+import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1.0.13';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { signUp } from '../app/(login)/actions.ts';
 import { DEFAULT_BLOCK_MESSAGE } from '../lib/signupbouncer.ts';
-import { inserted, resetDb, selectResults } from './stubs/drizzle.ts';
+import { inserted, ops, resetDb, selectResults } from './stubs/drizzle.ts';
 import { request } from './stubs/next-headers.ts';
 import { Redirect } from './stubs/next-navigation.ts';
 
@@ -56,20 +57,20 @@ function mockFetch(reply: (signal: AbortSignal | undefined) => Promise<Response>
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
 
-function form(email: string, password = 'a long password') {
+function form(email: string, inviteId = '', password = 'a long password') {
   const f = new FormData();
   f.set('email', email);
   f.set('password', password);
   f.set('redirect', '');
   f.set('priceId', '');
-  f.set('inviteId', '');
+  f.set('inviteId', inviteId);
   return f;
 }
 
 /** Runs signUp. Returns where it redirected, or the state it gave back to the form. */
-async function submit(email: string) {
+async function submit(email: string, inviteId = '') {
   try {
-    const state = await signUp({ error: '' }, form(email));
+    const state = await signUp({ error: '' }, form(email, inviteId));
     return { redirect: undefined, state };
   } catch (e) {
     if (e instanceof Redirect) return { redirect: e.url, state: undefined };
@@ -265,6 +266,26 @@ Deno.test('an existing user is refused before any check is made', async () => {
     assertEquals(r.state?.error, 'Failed to create user. Please try again.');
     assertEquals(calls.length, 0);
     assertEquals(inserted('users').length, 0);
+  } finally {
+    teardown();
+  }
+});
+
+Deno.test('#184: an invitation stored with capitals still matches the lowercased email', async () => {
+  setup();
+  selectResults.push([{ id: 7, teamId: 3, role: 'member', email: 'Ann@Gmail.com', status: 'pending' }]);
+  selectResults.push([{ id: 3, name: 'Team' }]);
+  mockFetch(() => json(answer('allow')));
+  try {
+    const r = await submit('Ann@Gmail.com', '7');
+    assertEquals(r.redirect, '/dashboard');
+    const lookup = ops.find((o) => o.op === 'select' && o.table === 'invitations');
+    assert(lookup?.where, 'the invitation lookup has a where clause');
+    const q = new PgDialect().sqlToQuery(lookup.where);
+    assertStringIncludes(q.sql, 'lower("invitations"."email") = $');
+    assert(q.params.includes('ann@gmail.com'));
+    assertEquals(inserted('teams').length, 0);
+    assertEquals(inserted('team_members')[0].values?.teamId, 3);
   } finally {
     teardown();
   }
