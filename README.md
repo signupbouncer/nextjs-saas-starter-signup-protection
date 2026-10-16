@@ -3,7 +3,7 @@
 The Next.js SaaS starter (nextjs/saas-starter) with one signupbouncer check in its sign-up server action.
 
 The walkthrough is
-[Block disposable emails and repeat signups in the Next.js SaaS starter](https://signupbouncer.com/guides/nextjs-saas-starter).
+[Block burner emails in the Next.js SaaS starter](https://signupbouncer.com/guides/nextjs-saas-starter).
 
 ## What it does
 
