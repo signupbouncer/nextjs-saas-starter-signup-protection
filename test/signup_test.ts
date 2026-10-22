@@ -130,6 +130,19 @@ Deno.test('block: the form gets the message back and no user is created', async 
   }
 });
 
+Deno.test('block: the form shows the message set on the Rules tab when the answer carries one', async () => {
+  setup();
+  const words = 'Sign up with your work email, please.';
+  mockFetch(() => json({ ...answer('block'), block_message: words }));
+  try {
+    const r = await submit('someone@mailinator.com');
+    assertEquals(r.state?.error, words);
+    assertEquals(inserted('users').length, 0);
+  } finally {
+    teardown();
+  }
+});
+
 Deno.test('challenge: allowed at the default, the user is created', async () => {
   setup();
   mockFetch(() => json(answer('challenge')));

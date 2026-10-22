@@ -21,9 +21,9 @@ import { redirect } from 'next/navigation';
 // #region sb-import
 import { cookies, headers } from 'next/headers';
 import {
+  blockMessage,
   checkSignup,
   clientIp,
-  DEFAULT_BLOCK_MESSAGE,
   shouldBlock
 } from '@/lib/signupbouncer';
 // #endregion
@@ -153,7 +153,7 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
     }
   );
   if (shouldBlock(check)) {
-    return { error: DEFAULT_BLOCK_MESSAGE, email, password };
+    return { error: blockMessage(check), email, password };
   }
 
   const passwordHash = await hashPassword(password);

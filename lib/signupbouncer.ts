@@ -37,6 +37,10 @@ export interface CheckResponse {
   check_id?: string;
   reasons?: { code: string; detail?: string; points?: number; tier?: string }[];
   quota_exceeded?: boolean;
+  /** Sent when `action` is "block" or "challenge": the message you set on your dashboard's Rules tab. */
+  block_message?: string;
+  /** Sent with `block_message` when you turn on the "Why was this refused?" link on the Rules tab. */
+  why_url?: string;
   [key: string]: unknown;
 }
 
@@ -47,7 +51,10 @@ export type CheckResult =
 export interface CheckOptions {
   /** Your `sb_live_...` key. Keep it on the server. */
   apiKey: string;
-  /** Default `https://signupbouncer.com`. */
+  /**
+   * Leave it out. It points the check at another copy of the API, such as one on your machine. Default: the
+   * SIGNUPBOUNCER_BASE_URL environment variable when set, otherwise `https://signupbouncer.com`.
+   */
   baseUrl?: string;
   /**
    * Leave it out. A key belongs to one app and its checks go there. Only an older all-apps key uses it to pick the
@@ -65,11 +72,16 @@ export interface SignupInput {
   ip?: string;
   userAgent?: string;
   /**
-   * For OAuth/SSO sign-ups: the provider that verified `email` ("google", "github", "google.com", ...). signupbouncer
-   * then scores only the IP and signup bursts, and still counts the email's domain in your stats. Leave it out for
-   * email/password sign-ups.
+   * For OAuth/SSO sign-ups: the provider id ("google", "github", "google.com", ...). Send it with `emailVerified`.
+   * Leave it out for email/password sign-ups.
    */
   authProvider?: string;
+  /**
+   * With `authProvider`: your auth platform's own flag that the provider verified this address (an OIDC
+   * `email_verified` claim, Firebase's `emailVerified`), never something the user typed. Only when it is `true` and
+   * signupbouncer knows the provider does it score just the IP and signup bursts; otherwise the email is checked too.
+   */
+  emailVerified?: boolean;
 }
 
 export const DEFAULT_BLOCK_MESSAGE = "Please sign up with a permanent email address.";
@@ -120,18 +132,29 @@ export function isCheckResponse(v: unknown): v is CheckResponse {
   return action === "allow" || (mode === "enforce" && v.quota_exceeded === false && action === verdict);
 }
 
+/** A variable from process.env, or undefined where there is none (a Worker) or reading it is not allowed (Deno). */
+function env(name: string): string | undefined {
+  try {
+    return typeof process === "undefined" ? undefined : process.env[name];
+  } catch {
+    return undefined;
+  }
+}
+
 /** Calls POST {baseUrl}/v1/check. Never throws. */
 export async function checkSignup(options: CheckOptions, input: SignupInput): Promise<CheckResult> {
   const apiKey = options.apiKey?.trim() ?? "";
   if (!apiKey) return failOpen(options.onError, { reason: "missing_api_key" });
   // A key with a newline or other junk pasted in: fetch would reject the header and quote the key in its error.
   if (!/^[\x21-\x7e]+$/.test(apiKey)) return failOpen(options.onError, { reason: "malformed_api_key" });
-  const url = (options.baseUrl ?? "https://signupbouncer.com").replace(/\/+$/, "") + "/v1/check";
-  const body: Record<string, string> = {};
+  const base = options.baseUrl || env("SIGNUPBOUNCER_BASE_URL") || "https://signupbouncer.com";
+  const url = base.replace(/\/+$/, "") + "/v1/check";
+  const body: Record<string, string | boolean> = {};
   if (input.email) body.email = input.email;
   if (input.ip) body.ip = input.ip;
   if (input.userAgent) body.user_agent = input.userAgent.slice(0, 512);
   if (input.authProvider) body.auth_provider = input.authProvider;
+  if (input.emailVerified === true || input.emailVerified === false) body.email_verified = input.emailVerified;
   if (options.app) body.app = options.app;
   if (!body.email && !body.ip) return { ok: true, action: "allow", response: { action: "allow" } };
 
@@ -182,6 +205,32 @@ export async function checkSignup(options: CheckOptions, input: SignupInput): Pr
 /** True when the sign-up should be refused. `challenge` decides what a "challenge" answer does (default allow). */
 export function shouldBlock(result: CheckResult, challenge: "allow" | "block" = "allow"): boolean {
   return result.action === "block" || (result.action === "challenge" && challenge === "block");
+}
+
+/**
+ * The message to show a refused sign-up, sent with a block or challenge answer: the one you set on your dashboard's
+ * Rules tab ("Block message"), or our default worded for the reason ("Did you mean ann@gmail.com?" for a typo domain).
+ * DEFAULT_BLOCK_MESSAGE when the answer has none.
+ */
+export function blockMessage(result: CheckResult): string {
+  const m = result.ok ? result.response.block_message : undefined;
+  return typeof m === "string" && m.trim() !== "" && m.length <= 500 ? m : DEFAULT_BLOCK_MESSAGE;
+}
+
+/**
+ * The "Why was this refused?" link to show after blockMessage(result): our page for the email's domain. It is sent
+ * only when you turn the link on in your dashboard's Rules tab. Otherwise, and for a failed check, it is null. Only a
+ * well-formed http(s) URL with a host counts, returned unchanged, so a bad value never becomes a link.
+ */
+export function whyUrl(result: CheckResult): string | null {
+  const u = result.ok ? result.response.why_url : undefined;
+  if (typeof u !== "string" || u.length > 2048 || !/^https?:\/\/[^\s/\\?#][^\s\\]*$/i.test(u)) return null;
+  try {
+    const url = new URL(u);
+    return (url.protocol === "https:" || url.protocol === "http:") && url.hostname !== "" ? u : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

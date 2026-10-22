@@ -20,7 +20,7 @@ What this copy changes from upstream:
 
 | File | Change |
 | --- | --- |
-| `lib/signupbouncer.ts` | The signupbouncer helper (`checkSignup`, `shouldBlock`, `clientIp`). No dependencies. |
+| `lib/signupbouncer.ts` | The signupbouncer helper (`checkSignup`, `shouldBlock`, `blockMessage`, `clientIp`). No dependencies. |
 | `app/(login)/actions.ts` | The check in `signUp`, after the existing-user check and before the user is created. A refusal goes back through the form's own `{ error }` state. |
 | `app/(login)/actions.ts` | The lowercase fix in each email schema, and an invitation lookup that compares the stored address in lower case. |
 | `.env.example` | `SIGNUPBOUNCER_API_KEY`, and the optional `SIGNUPBOUNCER_IP_HEADER` and `SIGNUPBOUNCER_BASE_URL`. |
