@@ -25,6 +25,8 @@ What this copy changes from upstream:
 | `app/(login)/actions.ts` | The lowercase fix in each email schema, and an invitation lookup that compares the stored address in lower case. |
 | `.env.example` | `SIGNUPBOUNCER_API_KEY`, and the optional `SIGNUPBOUNCER_IP_HEADER` and `SIGNUPBOUNCER_BASE_URL`. |
 | `tsconfig.json` | `test` is excluded, so `next build` skips the Deno tests. |
+| `package.json`, `pnpm-lock.yaml` | Next.js 16.4.2 instead of upstream's 15.6.0-canary.59. That canary is older than the fix for CVE-2026-96889, a remote code execution bug in Next.js disclosed in October 2026. The other packages keep upstream's versions. |
+| `next.config.ts` | Upstream's experimental `ppr` and `clientSegmentCache` flags are gone, because Next.js 16 no longer accepts them. Pages render without Partial Prerendering. |
 | `test/` | Offline tests of the sign-up action, and a live run against a running app. |
 
 ## Run it
@@ -92,8 +94,9 @@ Add `--api-down` with that API stopped to check that a signup still goes through
 ## Credit and license
 
 This is a copy of [nextjs/saas-starter](https://github.com/nextjs/saas-starter) by Vercel, at commit
-`6e33e58b1e553a41fe22e6b941a7229a002de361` (11 Dec 2025), with upstream's versions and `pnpm-lock.yaml`. The starter's
-own README is kept as `README.upstream.md`, with the Stripe setup and the steps for production.
+`6e33e58b1e553a41fe22e6b941a7229a002de361` (11 Dec 2025), with upstream's versions and `pnpm-lock.yaml` except
+Next.js, which is 16.4.2. The starter's own README is kept as `README.upstream.md`, with the Stripe setup and the steps
+for production.
 
 MIT, as upstream. See `LICENSE`.
 
